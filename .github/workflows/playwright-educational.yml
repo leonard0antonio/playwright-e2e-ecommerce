@@ -1,0 +1,205 @@
+# =============================================================================
+# GITHUB ACTIONS WORKFLOW - PLAYWRIGHT TESTS (EDUCATIONAL VERSION)
+# =============================================================================
+# Este arquivo ensina como funciona uma pipeline CI/CD básica para testes E2E
+# com Playwright. Cada seção tem comentários explicativos.
+#
+# CONCEITOS CHAVE:
+# - Workflow: O arquivo YAML completo (esta pipeline)
+# - Job: Um conjunto de steps que rodam no mesmo runner (máquina virtual)
+# - Step: Uma tarefa individual (comando ou action)
+# - Action: Código reutilizável empacotado (ex: actions/checkout@v4)
+# - Runner: A VM onde o job roda (ubuntu-latest, windows-latest, etc.)
+# - Artifact: Arquivos salvos após o job terminar (relatórios, logs, etc.)
+# =============================================================================
+
+name: 🎭 Playwright E2E Tests - Pipeline Educacional
+
+# =============================================================================
+# TRIGGERS (QUANDO A PIPELINE RODA)
+# =============================================================================
+on:
+  # Roda em TODO push para main ou master
+  push:
+    branches: [ main, master ]
+    # paths:                    # OPCIONAL: roda só se arquivos específicos mudarem
+    #   - 'tests/**'
+    #   - 'playwright.config.ts'
+    #   - 'package*.json'
+
+  # Roda em TODOS pull requests para main/master
+  pull_request:
+    branches: [ main, master ]
+
+  # OPCIONAL: Permite rodar manualmente pela interface do GitHub
+  workflow_dispatch:
+
+# =============================================================================
+# VARIÁVEIS DE AMBIENTE GLOBAIS
+# =============================================================================
+env:
+  # Define versão do Node.js em um só lugar
+  NODE_VERSION: '20.x'
+  # Cache key para dependências (acelera builds)
+  CACHE_KEY: playwright-deps-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+# =============================================================================
+# JOBS (O QUE EXECUTAR)
+# =============================================================================
+jobs:
+  # -----------------------------------------------------------------------------
+  # JOB 1: INSTALAÇÃO E TESTES
+  # -----------------------------------------------------------------------------
+  test:
+    name: 🧪 Executar Testes E2E
+    # Timeout máximo do job (60 min)
+    timeout-minutes: 60
+    # Tipo de máquina virtual (gratuito no GitHub)
+    runs-on: ubuntu-latest
+    
+    # ---------------------------------------------------------------------------
+    # STEPS (PASSOS SEQUENCIAIS)
+    # ---------------------------------------------------------------------------
+    steps:
+      # =========================================================================
+      # STEP 1: CHECKOUT DO CÓDIGO
+      # =========================================================================
+      # Baixa o código do repositório para o runner
+      # actions/checkout@v4 é uma action oficial do GitHub
+      - name: 📥 Checkout do código
+        uses: actions/checkout@v4
+        # with:                       # Parâmetros opcionais
+        #   fetch-depth: 0            # Baixa todo histórico (para git log)
+        #   token: ${{ secrets.GITHUB_TOKEN }}  # Token automático
+
+      # =========================================================================
+      # STEP 2: CONFIGURAR NODE.JS
+      # =========================================================================
+      # Instala a versão específica do Node.js no runner
+      # actions/setup-node@v4 gerencia versões e cache de pacotes
+      - name: 🟢 Configurar Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          # Habilita cache do npm (muito mais rápido nas próximas execuções)
+          cache: 'npm'
+          # cache-dependency-path: package-lock.json  # Arquivo para hash do cache
+
+      # =========================================================================
+      # STEP 3: INSTALAR DEPENDÊNCIAS
+      # =========================================================================
+      # npm ci = "clean install" - mais rápido e confiável que npm install
+      # - Deleta node_modules e reinstala tudo do zero
+      # - Usa package-lock.json (versões exatas)
+      # - Falha se package-lock.json não bater com package.json
+      - name: 📦 Instalar dependências (npm ci)
+        run: npm ci
+        # shell: bash  # Explícito (padrão no Ubuntu)
+
+      # =========================================================================
+      # STEP 4: INSTALAR NAVEGADORES PLAYWRIGHT
+      # =========================================================================
+      # Playwright precisa dos binários dos navegadores (Chromium, Firefox, WebKit)
+      # --with-deps instala dependências do sistema (libraries necessárias no Linux)
+      # Isso roda dentro do runner Ubuntu
+      - name: 🌐 Instalar navegadores Playwright
+        run: npx playwright install --with-deps
+        # OPCIONAL: Instalar só Chromium (mais rápido)
+        # run: npx playwright install chromium --with-deps
+
+      # =========================================================================
+      # STEP 5: RODAR TESTES
+      # =========================================================================
+      # Executa a suíte de testes
+      # npx playwright test roda todos os arquivos *.spec.ts em tests/
+      # Gera relatório HTML em playwright-report/
+      - name: 🧪 Executar testes Playwright
+        run: npx playwright test
+        # Variáveis de ambiente úteis:
+        # env:
+        #   CI: true                    # Playwright detecta CI automaticamente
+        #   PLAYWRIGHT_HTML_REPORT: playwright-report  # Pasta do relatório
+
+      # =========================================================================
+      # STEP 6: UPLOAD DO RELATÓRIO (ARTIFACT)
+      # =========================================================================
+      # Salva o relatório HTML como artifact para download posterior
+      # if: ${{ !cancelled() }} = roda mesmo se testes falharem
+      # retention-days: 30 = mantém por 30 dias (grátis até 500MB)
+      - name: 📊 Upload do relatório HTML
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ github.run_id }}
+          path: playwright-report/
+          retention-days: 30
+          # compression-level: 6  # Nível de compressão (0-9)
+
+      # =========================================================================
+      # STEP 7: UPLOAD DE TRACES DE FALHA (OPCIONAL)
+      # =========================================================================
+      # Salva traces (gravações de execução) só dos testes que falharam
+      # Muito útil para debug - abre em trace.playwright.dev
+      - name: 🔍 Upload traces de falhas
+        if: failure()  # Só roda se o step anterior falhou
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces-${{ github.run_id }}
+          path: test-results/
+          retention-days: 7
+          if-no-files-found: ignore  # Não falha se não houver traces
+
+  # -----------------------------------------------------------------------------
+  # JOB 2: RESUMO NO PR (OPCIONAL - REQUER PERMISSÕES)
+  # -----------------------------------------------------------------------------
+  # Comenta no Pull Request com resumo dos testes
+  # Descomente e configure permissões se quiser usar
+  #
+  # pr-comment:
+  #   name: 💬 Comentar resumo no PR
+  #   needs: test          # Roda DEPOIS do job 'test'
+  #   if: github.event_name == 'pull_request'
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     pull-requests: write  # Permissão para comentar no PR
+  #   steps:
+  #     - name: Baixar relatório
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         name: playwright-report-${{ needs.test.result }}
+  #     - name: Comentar no PR
+  #       uses: actions/github-script@v7
+  #       with:
+  #         script: |
+  #           const fs = require('fs');
+  #           const report = fs.readFileSync('playwright-report/index.html', 'utf8');
+  #           // Lógica para extrair resumo e comentar no PR
+
+# =============================================================================
+# DICAS DE OTIMIZAÇÃO (PARA QUANDO ESCALAR)
+# =============================================================================
+#
+# 1. MATRIX STRATEGY - Testar múltiplas versões/OSs:
+#    strategy:
+#      matrix:
+#        os: [ubuntu-latest, windows-latest, macos-latest]
+#        node: [18.x, 20.x, 22.x]
+#    runs-on: ${{ matrix.os }}
+#
+# 2. SHARDING - Dividir testes em múltiplas máquinas:
+#    - name: Run tests (shard 1/3)
+#      run: npx playwright test --shard=1/3
+#
+# 3. CACHE DE NAVEGADORES - Evita reinstalar browsers:
+#    - uses: actions/cache@v4
+#      with:
+#        path: ~/.cache/ms-playwright
+#        key: playwright-browsers-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+#
+# 4. RELATÓRIO JUNIT - Para integração com outras ferramentas:
+#    - name: Run tests with JUnit
+#      run: npx playwright test --reporter=junit
+#    - uses: actions/upload-artifact@v4
+#      with:
+#        name: junit-report
+#        path: test-results/junit.xml
