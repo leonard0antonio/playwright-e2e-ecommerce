@@ -1,0 +1,62 @@
+# =============================================================================
+# GITHUB ACTIONS - PLAYWRIGHT SIMPLES (VERSÃO MÍNIMA COMENTADA)
+# =============================================================================
+# Pipeline mínima para rodar testes Playwright a cada push/PR
+# Copie este arquivo para .github/workflows/playwright.yml para usar
+# =============================================================================
+
+name: Playwright Tests
+
+# QUANDO RODAR: push ou PR para main/master
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    # Nome que aparece na aba Actions
+    name: Testes E2E
+    # Tempo limite (minutos)
+    timeout-minutes: 60
+    # Máquina virtual (Ubuntu grátis no GitHub)
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. BAIXA O CÓDIGO DO REPOSITÓRIO
+      # actions/checkout@v4 = action oficial do GitHub
+      - uses: actions/checkout@v4
+
+      # 2. INSTALA NODE.JS (versão LTS = Long Term Support)
+      # actions/setup-node@v4 gerencia versão + cache do npm
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: 'npm'  # Cache automático do node_modules
+
+      # 3. INSTALA DEPENDÊNCIAS DO PROJETO
+      # npm ci = "clean install" (usa package-lock.json, mais rápido/seguro)
+      - name: Instalar dependências
+        run: npm ci
+
+      # 4. INSTALA NAVEGADORES DO PLAYWRIGHT
+      # --with-deps = instala bibliotecas do sistema necessárias no Linux
+      - name: Instalar navegadores
+        run: npx playwright install --with-deps
+
+      # 5. RODA OS TESTES
+      # Gera relatório HTML em ./playwright-report/
+      - name: Executar testes
+        run: npx playwright test
+
+      # 6. SALVA RELATÓRIO COMO ARTIFACT (downloadável)
+      # if: ${{ !cancelled() }} = salva mesmo se testes falharem
+      # retention-days: 30 = guarda por 30 dias
+      - name: Salvar relatório
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 30
