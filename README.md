@@ -1,4 +1,4 @@
-# Playwright E2E Ecommerce
+# playwright-e2e-the-internet
 
 [![Playwright](https://img.shields.io/badge/Playwright-Test-45BA4B?logo=playwright&logoColor=white)](https://playwright.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
